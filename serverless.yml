@@ -1,0 +1,20 @@
+service: netlify-discord-webhook
+frameworkVersion: ">=1.21.0 <2.0.0"
+provider:
+  name: aws
+  runtime: nodejs10.x
+  region: us-east-1
+  environment:
+    WEBHOOK_SECRET: "EXAMPLE_WEBHOOK_SECRET"
+    DISCORD_WEBHOOK_URL: "EXAMPLE_DISCORD_WEBHOOK"
+functions:
+  lambda:
+    handler: app.handler
+    environment:
+      WEBHOOK_SECRET: ${self:provider.environment.WEBHOOK_SECRET}
+      DISCORD_WEBHOOK_URL: ${self:provider.environment.DISCORD_WEBHOOK_URL}
+    events:
+      - http:
+          path: webhook
+          method: post
+          cors: true

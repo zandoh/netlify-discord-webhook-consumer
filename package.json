@@ -1,0 +1,16 @@
+{
+  "devDependencies": {
+    "@types/node": "^12.12.17",
+    "aws-lambda": "^0.1.2",
+    "serverless": "^1.59.3",
+    "typescript": "^3.7.3"
+  },
+  "scripts": {
+    "build": "tsc app.ts",
+    "build:watch": "tsc app.ts --watch",
+    "deploy": "yarn build && serverless deploy"
+  },
+  "dependencies": {
+    "axios": "^0.19.0"
+  }
+}
