@@ -56,7 +56,7 @@ export const handler = async (
   callback: Callback
 ) => {
   const { WEBHOOK_SECRET, DISCORD_WEBHOOK_URL } = process.env;
-  const sigHeaderName = event.headers["x-webhook-signature"];
+  const sigHeaderName = "x-webhook-signature";
   const hmac = crypto.createHmac("sha256", WEBHOOK_SECRET);
   const digest = "sha256=" + hmac.update(event.body).digest("hex");
   const checksum = event.headers["x-webhook-signature"];
