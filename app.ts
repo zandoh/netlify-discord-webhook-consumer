@@ -1,4 +1,3 @@
-import * as crypto from "crypto";
 import { APIGatewayProxyEvent, Context, Callback } from "aws-lambda";
 import { Hook } from "hookcord";
 import { verify } from "jsonwebtoken";
