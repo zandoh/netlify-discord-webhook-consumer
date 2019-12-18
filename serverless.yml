@@ -5,8 +5,8 @@ provider:
   runtime: nodejs10.x
   region: us-east-1
   environment:
-    WEBHOOK_SECRET: "EXAMPLE_WEBHOOK_SECRET"
-    DISCORD_WEBHOOK_URL: "EXAMPLE_DISCORD_WEBHOOK"
+    WEBHOOK_SECRET: ${file(./serverless.env.yml):WEBHOOK_SECRET}
+    DISCORD_WEBHOOK_URL: ${file(./serverless.env.yml):DISCORD_WEBHOOK_URL}
 functions:
   lambda:
     handler: app.handler

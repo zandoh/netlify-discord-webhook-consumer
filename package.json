@@ -11,6 +11,7 @@
     "deploy": "yarn build && serverless deploy"
   },
   "dependencies": {
-    "axios": "^0.19.0"
+    "hookcord": "^2.0.2",
+    "jsonwebtoken": "^8.5.1"
   }
 }

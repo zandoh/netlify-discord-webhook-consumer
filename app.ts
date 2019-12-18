@@ -1,20 +1,13 @@
 import * as crypto from "crypto";
 import { APIGatewayProxyEvent, Context, Callback } from "aws-lambda";
-const axios = require("axios");
-
-// enum to map state from the event body
-// to a notification type in netlify
-enum NetlifyEvents {
-  "Deploy Started" = "building",
-  "Deploy Succeeded" = "ready",
-  "Deploy Failed" = "error"
-}
+import { Hook } from "hookcord";
+import { verify } from "jsonwebtoken";
 
 interface NetlifyEventBody {
   id: string;
   site_id: string;
   build_id: string;
-  state: string;
+  state: NetlifyStates;
   name: string;
   url: string;
   ssl_url: string;
@@ -23,6 +16,43 @@ interface NetlifyEventBody {
   deploy_ssl_url: string;
   error_message?: string;
   branch: string;
+}
+
+enum Colors {
+  GREEN = 0x238823,
+  YELLOW = 0xffbf00,
+  RED = 0xd2222d,
+  BLUE = 0x008ce4
+}
+
+// enum to reference netlify states consistently
+enum NetlifyStates {
+  BUILDING = "building",
+  READY = "ready",
+  ERROR = "error"
+}
+
+// maps a build state to messaging above
+// the embedded message
+enum ContentMapping {
+  "building" = "There is a new deploy in process for",
+  "ready" = "Successful deploy of",
+  "error" = "Deploy did not complete for"
+}
+
+// maps a build state to a color for the sidebar
+// styling of the embedded message
+enum ColorMapping {
+  "building" = Colors.YELLOW,
+  "ready" = Colors.GREEN,
+  "error" = Colors.RED
+}
+
+// maps a build state to some verbiage
+enum TitleMapping {
+  "building" = "Visit the build log",
+  "ready" = "Visit the changes live",
+  "error" = "Visit the build log"
 }
 
 // always want to send a 200 back to Netlify so they
@@ -34,20 +64,34 @@ const sendResponse = (callback: Callback) => {
   callback(null, response);
 };
 
-// lookup a NetlifyNotificationEvent by event state
-const getEventByState = (state: string): string | null => {
-  let keys = Object.keys(NetlifyEvents).filter(x => NetlifyEvents[x] == state);
-  return keys.length > 0 ? keys[0] : null;
+// utility function to get value from enum
+// avoiding runtime errors
+const getValueByKey = (
+  enumerated: any,
+  key: string
+): string | number | null => {
+  return enumerated[key] ?? null;
 };
 
-const generateMessage = (body: NetlifyEventBody): string => {
-  return `
-    **Site Name:** ${body.name}\n**Status:** ${getEventByState(
-    body.state
-  )}\n**Link:** [Build Logs](${body.admin_url}/deploys/${
-    body.id
-  })\n-------------------------------------------------------------------------------------
-  `;
+const generateMessage = (body: NetlifyEventBody) => {
+  const buildLogUrl = `${body.admin_url}/deploys/${body.id}`;
+  const buildLogDescription = `Or check out the [build log](${buildLogUrl})`;
+  return {
+    content: `${getValueByKey(ContentMapping, body.state)} *${body.name}*`,
+    embeds: [
+      {
+        color: getValueByKey(ColorMapping, body.state),
+        title: getValueByKey(TitleMapping, body.state),
+        url: body.state === NetlifyStates.READY ? body.url : buildLogUrl,
+        description:
+          body.state === NetlifyStates.READY ? buildLogDescription : "",
+        timestamp: new Date(),
+        footer: {
+          text: `Using git branch ${body.branch}`
+        }
+      }
+    ]
+  };
 };
 
 export const handler = async (
@@ -56,25 +100,26 @@ export const handler = async (
   callback: Callback
 ) => {
   const { WEBHOOK_SECRET, DISCORD_WEBHOOK_URL } = process.env;
-  const sigHeaderName = "x-webhook-signature";
-  const hmac = crypto.createHmac("sha256", WEBHOOK_SECRET);
-  const digest = "sha256=" + hmac.update(event.body).digest("hex");
-  const checksum = event.headers["x-webhook-signature"];
+  try {
+    await verify(event.headers["x-webhook-signature"], WEBHOOK_SECRET, {
+      algorithm: "SHA256"
+    });
+  } catch (err) {
+    console.error("Webhook JWT failed verification", err);
+    sendResponse(callback);
+  }
+  try {
+    const discordAuthParts = DISCORD_WEBHOOK_URL.split("/");
+    const id = discordAuthParts[discordAuthParts.length - 2];
+    const secret = discordAuthParts[discordAuthParts.length - 1];
 
-  if (!checksum || !digest || checksum !== digest) {
-    try {
-      await axios.post(DISCORD_WEBHOOK_URL, {
-        content: generateMessage(JSON.parse(event.body))
-      });
-      sendResponse(callback);
-    } catch (err) {
-      console.error(err);
-      sendResponse(callback);
-    }
-  } else {
-    console.error(
-      `Authentication Failed: Request body digest (${digest}) did not match ${sigHeaderName} (${checksum})`
-    );
+    new Hook()
+      .login(id, secret)
+      .setPayload(generateMessage(JSON.parse(event.body)))
+      .fire();
+    sendResponse(callback);
+  } catch (err) {
+    console.error(err);
     sendResponse(callback);
   }
 };
