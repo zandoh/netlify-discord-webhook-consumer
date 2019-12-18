@@ -1,6 +1,7 @@
 import * as crypto from "crypto";
 import { APIGatewayProxyEvent, Context, Callback } from "aws-lambda";
 import { Hook } from "hookcord";
+import { verify } from "jsonwebtoken";
 
 interface NetlifyEventBody {
   id: string;
@@ -72,10 +73,10 @@ const getValueByKey = (
   return enumerated[key] ?? null;
 };
 
-const generateMessage = (body?: NetlifyEventBody) => {
+const generateMessage = (body: NetlifyEventBody) => {
   const buildLogUrl = `${body.admin_url}/deploys/${body.id}`;
   const buildLogDescription = `Or check out the [build log](${buildLogUrl})`;
-  const message = {
+  return {
     content: `${getValueByKey(ContentMapping, body.state)} *${body.name}*`,
     embeds: [
       {
@@ -91,7 +92,6 @@ const generateMessage = (body?: NetlifyEventBody) => {
       }
     ]
   };
-  return message;
 };
 
 export const handler = async (
@@ -100,30 +100,26 @@ export const handler = async (
   callback: Callback
 ) => {
   const { WEBHOOK_SECRET, DISCORD_WEBHOOK_URL } = process.env;
-  const sigHeaderName = "x-webhook-signature";
-  const hmac = crypto.createHmac("sha256", WEBHOOK_SECRET);
-  const digest = "sha256=" + hmac.update(event.body).digest("hex");
-  const checksum = event.headers["x-webhook-signature"];
+  try {
+    await verify(event.headers["x-webhook-signature"], WEBHOOK_SECRET, {
+      algorithm: "SHA256"
+    });
+  } catch (err) {
+    console.error("Webhook JWT failed verification", err);
+    sendResponse(callback);
+  }
+  try {
+    const discordAuthParts = DISCORD_WEBHOOK_URL.split("/");
+    const id = discordAuthParts[discordAuthParts.length - 2];
+    const secret = discordAuthParts[discordAuthParts.length - 1];
 
-  if (!checksum || !digest || checksum !== digest) {
-    try {
-      const discordAuthParts = DISCORD_WEBHOOK_URL.split("/");
-      const id = discordAuthParts[discordAuthParts.length - 2];
-      const secret = discordAuthParts[discordAuthParts.length - 1];
-
-      new Hook()
-        .login(id, secret)
-        .setPayload(generateMessage())
-        .fire();
-      sendResponse(callback);
-    } catch (err) {
-      console.error(err);
-      sendResponse(callback);
-    }
-  } else {
-    console.error(
-      `Authentication Failed: Request body digest (${digest}) did not match ${sigHeaderName} (${checksum})`
-    );
+    new Hook()
+      .login(id, secret)
+      .setPayload(generateMessage(JSON.parse(event.body)))
+      .fire();
+    sendResponse(callback);
+  } catch (err) {
+    console.error(err);
     sendResponse(callback);
   }
 };
